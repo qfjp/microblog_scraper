@@ -5,7 +5,7 @@ import tweepy
 
 from global_vars import (FILE_NOT_FOUND_EXIT_CODE, NUM_TWEETS_TO_GRAB,
                          TWEETS_FNAME, USERS_FNAME)
-from utils import authenticate, pickle_it, reload_object
+from utils import authenticate_twitter, pickle_it, reload_object
 
 NEW_TWEETS = 0
 NEW_USERS = 0
@@ -60,9 +60,9 @@ class StreamListener(tweepy.StreamListener):
 
 
 def main():
-    api = authenticate()
     tweet_dict = reload_object(TWEETS_FNAME, dict)
     user_dict = reload_object(USERS_FNAME, dict)
+    api = authenticate_twitter()
 
     stream_listener = StreamListener(user_dict, tweet_dict)
     stream = tweepy.Stream(auth=api.auth, listener=stream_listener)

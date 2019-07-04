@@ -6,7 +6,7 @@ import dill
 import tweepy
 
 
-def authenticate():
+def authenticate_twitter():
     auth = tweepy.OAuthHandler(TWITTER_APP_KEY, TWITTER_APP_SECRET)
     auth.set_access_token(TWITTER_KEY, TWITTER_SECRET)
     api = tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True)
