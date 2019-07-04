@@ -10,13 +10,11 @@ from utils import authenticate_twitter, pickle_it, reload_object
 NEW_TWEETS = 0
 NEW_USERS = 0
 
+TWEET_DICT = reload_object(TWEETS_FNAME, dict)
+USER_DICT = reload_object(USERS_FNAME, dict)
+
 
 class StreamListener(tweepy.StreamListener):
-    def __init__(self, user_dict, tweet_dict):
-        tweepy.StreamListener.__init__(self)
-        self.tweet_dict = tweet_dict
-        self.user_dict = user_dict
-
     def on_status(self, tweet):
         global NEW_TWEETS
         global NEW_USERS
@@ -24,34 +22,41 @@ class StreamListener(tweepy.StreamListener):
         user_id = tweet.user.id_str
         tweet_json = tweet._json
 
-        if user_id not in self.tweet_dict:
+        if user_id not in TWEET_DICT:
             NEW_USERS += 1
 
         init_len = 0
         try:
-            init_len = len(self.tweet_dict[user_id])
-            self.tweet_dict[user_id].append(tweet_json)
+            init_len = len(TWEET_DICT[user_id])
+            TWEET_DICT[user_id].append(tweet_json)
         except KeyError:
-            self.tweet_dict[user_id] = [tweet_json]
+            TWEET_DICT[user_id] = [tweet_json]
 
-        if user_id not in self.user_dict:
-            self.user_dict[user_id] = tweet.user._json
+        if user_id not in USER_DICT:
+            USER_DICT[user_id] = tweet.user._json
+            USER_DICT[user_id]["followers"] = []
+            USER_DICT[user_id]["friends"] = []
 
         # update tweet num
-        after_len = len(self.tweet_dict[user_id])
+        after_len = len(TWEET_DICT[user_id])
         if init_len < after_len:
             NEW_TWEETS += 1
+
         if NEW_TWEETS >= NUM_TWEETS_TO_GRAB:
-            if not pickle_it(self.tweet_dict, TWEETS_FNAME):
-                sys.stderr.write("ERROR: ABORT!\n")
+            if not pickle_it(TWEET_DICT, TWEETS_FNAME):
+                sys.stderr.write(f"ERROR: Failed final pickling, abort!\n")
                 sys.exit(FILE_NOT_FOUND_EXIT_CODE)
-            if not pickle_it(self.user_dict, USERS_FNAME):
-                sys.stderr.write("ERROR: ABORT!\n")
+            if not pickle_it(USER_DICT, USERS_FNAME):
+                sys.stderr.write(f"ERROR: Failed final pickling, abort!\n")
                 sys.exit(FILE_NOT_FOUND_EXIT_CODE)
-            sys.exit(0)
+            return False
 
         if NEW_TWEETS % 100 == 0:
-            print(f"currently scraped #{NEW_TWEETS} new tweets")
+            print(f"currently scraped {NEW_TWEETS} new tweets")
+            if not pickle_it(TWEET_DICT, TWEETS_FNAME):
+                sys.stderr.write(f"failed to pickle after {NEW_TWEETS} tweets")
+            if not pickle_it(USER_DICT, USERS_FNAME):
+                sys.stderr.write(f"failed to pickle after {NEW_TWEETS} tweets")
 
     def on_error(self, status_code):
         if status_code == 420:
@@ -60,13 +65,11 @@ class StreamListener(tweepy.StreamListener):
 
 
 def main():
-    tweet_dict = reload_object(TWEETS_FNAME, dict)
-    user_dict = reload_object(USERS_FNAME, dict)
     api = authenticate_twitter()
 
-    stream_listener = StreamListener(user_dict, tweet_dict)
     stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
     stream.filter(track=KEYWORDS)
+    stream_listener = StreamListener()
 
 
 if __name__ == "__main__":
