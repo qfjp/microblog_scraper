@@ -1,3 +1,4 @@
+import datetime as dt
 import sys
 from secrets import KEYWORDS
 
@@ -12,6 +13,22 @@ NEW_USERS = 0
 
 TWEET_DICT = reload_object(TWEETS_FNAME, dict)
 USER_DICT = reload_object(USERS_FNAME, dict)
+
+
+def expand_user_list(user_id, api_obj, count_key):
+    now = dt.datetime.now()
+    print(
+        "(%s) (id=%s) Expanding %s"
+        % (now.strftime("%a, %b %d %I:%M %p"), user_id, count_key)
+    )
+    user_cursor = tweepy.Cursor(api_obj, user_id=user_id)
+    for user_id_page in user_cursor.pages():
+        users_on_page = []
+        for other_user_id in user_id_page:
+            users_on_page.append(other_user_id)
+        USER_DICT[user_id][count_key] += users_on_page
+    if not pickle_it(USER_DICT, USERS_FNAME):
+        sys.stderr.write(f"failed to pickle after processing user {user_id}")
 
 
 class StreamListener(tweepy.StreamListener):
@@ -64,12 +81,47 @@ class StreamListener(tweepy.StreamListener):
             return False
 
 
+def expand_neighbors(api):
+    for i, user_id in enumerate(USER_DICT):
+        print(f"expanding {user_id}'s friends")
+        if USER_DICT[user_id]["followers"] == 0:
+            USER_DICT[user_id]["followers"] = []
+        if USER_DICT[user_id]["friends"] == 0:
+            USER_DICT[user_id]["friends"] = []
+        num_actual_followers = len(USER_DICT[user_id]["followers"])
+        num_actual_friends = len(USER_DICT[user_id]["friends"])
+
+        num_expected_followers = USER_DICT[user_id]["followers_count"]
+
+        num_expected_friends = USER_DICT[user_id]["friends_count"]
+        if num_actual_followers == 0:
+            expand_user_list(user_id, api.followers_ids, "followers")
+            expand_user_list(user_id, api.friends_ids, "friends")
+        elif num_actual_followers != num_expected_followers:
+            print(
+                f"mismatched follower count: {num_actual_followers}, but expected {num_expected_followers}"
+            )
+            print(f"Check userid {user_id}")
+        elif num_actual_friends != num_expected_friends:
+            print(
+                f"mismatched follower count: {num_actual_friends}, but expected {num_expected_friends}"
+            )
+            print(f"Check userid {user_id}")
+        print(f"finished {user_id}'s friends\n")
+        if (i + 1) % 100 == 0:
+            print("=====================")
+            print("Processed %06d users" % i)
+            print("=====================")
+            print()
+
+
 def main():
     api = authenticate_twitter()
 
-    stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
-    stream.filter(track=KEYWORDS)
     stream_listener = StreamListener()
+    stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
+    stream.filter(track=KEYWORDS, stall_warnings=True)
+    expand_neighbors(api)
 
 
 if __name__ == "__main__":
