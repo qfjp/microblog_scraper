@@ -112,7 +112,7 @@ def expand_neighbors(api):
         print(f"finished {user_id}'s friends\n")
         if (i + 1) % 100 == 0:
             print("=====================")
-            print("Processed %06d users" % i)
+            print("Processed %06d users" % (i + 1))
             print("=====================")
             print()
 
