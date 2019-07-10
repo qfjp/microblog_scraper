@@ -22,7 +22,13 @@ def expand_user_list(user_id, api_obj, count_key):
         % (now.strftime("%a, %b %d %I:%M %p"), user_id, count_key)
     )
     user_cursor = tweepy.Cursor(api_obj, user_id=user_id)
-    for user_id_page in user_cursor.pages():
+    pages = []
+    try:
+        pages = list(user_cursor.pages())
+    except tweepy.error.TweepError:
+        print("This user has protected tweets, skipping")
+    return
+    for user_id_page in pages:
         users_on_page = []
         for other_user_id in user_id_page:
             users_on_page.append(other_user_id)
