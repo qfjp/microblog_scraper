@@ -76,10 +76,6 @@ class StreamListener(tweepy.StreamListener):
 
         if NEW_TWEETS % 100 == 0:
             print(f"currently scraped {NEW_TWEETS} new tweets")
-            if not pickle_it(TWEET_DICT, TWEETS_FNAME):
-                sys.stderr.write(f"failed to pickle after {NEW_TWEETS} tweets")
-            if not pickle_it(USER_DICT, USERS_FNAME):
-                sys.stderr.write(f"failed to pickle after {NEW_TWEETS} tweets")
 
     def on_error(self, status_code):
         if status_code == 420:
