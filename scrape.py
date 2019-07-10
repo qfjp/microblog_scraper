@@ -8,6 +8,8 @@ from global_vars import (FILE_NOT_FOUND_EXIT_CODE, NUM_TWEETS_TO_GRAB,
                          TWEETS_FNAME, USERS_FNAME)
 from utils import authenticate_twitter, pickle_it, reload_object
 
+GRAB_NEW = False
+
 NEW_TWEETS = 0
 NEW_USERS = 0
 
@@ -118,11 +120,13 @@ def expand_neighbors(api):
 
 
 def main():
+    global GRAB_NEW
     api = authenticate_twitter()
 
-    stream_listener = StreamListener()
-    stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
-    stream.filter(track=KEYWORDS, stall_warnings=True)
+    if GRAB_NEW:
+        stream_listener = StreamListener()
+        stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
+        stream.filter(track=KEYWORDS, stall_warnings=True)
     expand_neighbors(api)
 
 
