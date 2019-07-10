@@ -25,6 +25,7 @@ def reload_object(fname, default_obj):
 
 
 def pickle_it(picklable, fname):
+    print(f"Pickling object to {fname}")
     try:
         with open(fname, "wb") as pickle_file:
             dill.dump(picklable, pickle_file)
