@@ -18,33 +18,6 @@ STDEV_MOD = 4
 OTHERS_MOD = 0.0001
 
 
-def plot_histo(graph):
-    bar_width = 0.35
-    opacity = 0.8
-
-    print("Building histogram...")
-    num_nodes = 0
-    outs = []
-    ins = []
-    for user_id in graph:
-        num_nodes += 1
-        num_out = graph.out_degree(user_id)
-        num_in = graph.in_degree(user_id)
-        outs.append(num_out)
-        ins.append(num_in)
-
-    n_groups = len(outs)
-    rects1 = plt
-    fig, ax = plt.subplots()
-    index = np.arange(n_groups)
-    rects1 = plt.bar(index, outs, bar_width, alpha=opacity, color="b", label="Out")
-    rects2 = plt.bar(
-        index + bar_width, ins, bar_width, alpha=opacity, color="g", label="In"
-    )
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
 
 @unique
 class Direct(Enum):
