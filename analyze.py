@@ -6,17 +6,24 @@ from statistics import mean, stdev
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import pandas as pd
+import ujson
 from networkx.drawing.nx_agraph import to_agraph
 
-from global_vars import (NO_DATA_EXIT_CODE, TWEETS_FNAME, USER_GRAPH_FNAME,
-                         USERS_FNAME)
-from utils import pickle_it, reload_object
+from global_vars import (NO_DATA_EXIT_CODE, RNG_FNAME, TWEETS_FNAME,
+                         USER_DICT_FNAME, USER_FRAME_FNAME, USER_GRAPH_FNAME)
+from utils import json_it, pickle_it, reload_json, reload_object
 
-USER_DICT = reload_object(USERS_FNAME, dict)
+USER_FRAME = pd.DataFrame(reload_json(USER_DICT_FNAME, dict)).transpose()
 
-STDEV_MOD = 4
-OTHERS_MOD = 0.0001
+friends = USER_FRAME["friends"]
+followers = USER_FRAME["followers"]
+with_friends = USER_FRAME.loc[USER_FRAME["friends"].astype(bool)]
+VALID_USER_FRAME = with_friends.loc[with_friends["followers"].astype(bool)]
+USER_LIST = VALID_USER_FRAME.axes[0]
 
+STDEV_MOD = 1
+OTHERS_MOD = 0.001
 
 
 @unique
@@ -43,39 +50,42 @@ class Direct(Enum):
             return (user, other)
 
 
-def get_bounds(graph, user_id, direct=Direct.IN):
+def get_expected_connection_bounds(graph, user_id, direct=Direct.IN):
     try:
         num = direct.deg_view(graph)[user_id]
     except KeyError:
         num = 0
 
     try:
-        expected = len(USER_DICT[user_id][direct.twit_key()])
+        expected = len((VALID_USER_FRAME.loc[user_id])[direct.twit_key()])
     except TypeError:
         sys.stderr.write(f"Unexpected type for {direct.twit_key()} list on {user_id}")
         expected = 0
     return num, expected
 
 
-def build_graph(pickle=True, from_scratch=False):
+def build_graph(pickle=False, from_scratch=True):
+    user_graph = nx.DiGraph()
     if not from_scratch:
         print("Loading graph data.")
         user_graph = reload_object(USER_GRAPH_FNAME, nx.DiGraph)
         if user_graph:
             return user_graph
     print("Building graph...")
-    if not USER_DICT:
+    if VALID_USER_FRAME.empty:
         sys.stderr.write("ERROR:  A user or tweet dictionary is empty.")
         sys.exit(NO_DATA_EXIT_CODE)
 
-    for i, user_id in enumerate(USER_DICT):
+    for i, user_id in enumerate(USER_LIST):
         new_edges = {Direct.IN: [], Direct.OUT: []}
         for direct in (Direct.IN, Direct.OUT):
-            num, expected = get_bounds(user_graph, user_id, direct=direct)
+            num, expected = get_expected_connection_bounds(
+                user_graph, user_id, direct=direct
+            )
             if num == 0:
-                others = USER_DICT[user_id][direct.twit_key()]
+                others = (VALID_USER_FRAME.loc[user_id])[direct.twit_key()]
                 for ident in others:
-                    edge = direct.make_edge(user_id, ident)
+                    edge = direct.make_edge(int(user_id), int(ident))
                     new_edges[direct].append(edge)
             elif num != expected:
                 print(
@@ -85,63 +95,78 @@ def build_graph(pickle=True, from_scratch=False):
                 print()
         new_in = new_edges[Direct.IN]
         new_out = new_edges[Direct.OUT]
-        if len(new_in) == 0 or len(new_out) == 0:
-            print(
-                f"Either no in edges ({new_in}), or no out edges ({new_out}) for {user_id}"
-            )
-        else:
+        if len(new_in) != 0 or len(new_out) != 0:
             user_graph.add_edges_from(new_in)
             user_graph.add_edges_from(new_out)
 
         if (i + 1) % 100 == 0:
             print(f"Analyzed %d users" % (i + 1))
     if pickle:
-        pickle_it(user_graph, USER_GRAPH_FNAME)
+        pickle_it(user_graph, FULL_GRAPH_FNAME)
     return user_graph
 
 
-def trim_graph(graph, reduce_sample=True):
+def trim_graph(graph, reduce_sample=True, pickle=True, from_scratch=True):
+    if not graph and not from_scratch:
+        graph = reload_json(USER_GRAPH_FNAME, transform=nx.node_link_graph)
+        return graph
+
+    rng_state = reload_object(RNG_FNAME, random.getstate)
+    random.setstate(rng_state)
     print("Trimming graph...")
-    significant_ids = set()
+    significant_id_set = set()
+
     for direct in (Direct.IN, Direct.OUT):
         sample = []
         ids = []
         for user_id in graph:
             ids.append(user_id)
-            num_in = direct.deg_view(graph)[user_id]
-            sample.append(num_in)
+            num_neighb = direct.deg_view(graph)[user_id]
+            sample.append(num_neighb)
         sample_mean = mean(sample)
         pop_stdev = stdev(sample)
         for i, degree in enumerate(sample):
             if abs(degree - sample_mean) > STDEV_MOD * pop_stdev:
                 user_id = ids[i]
-                significant_ids.add(user_id)
+                significant_id_set.add((user_id, degree))
 
-        extras = set()
-        for user_id in significant_ids:
-            try:
-                others = set(USER_DICT[user_id][direct.twit_key()])
-            except KeyError:
-                continue
-            if reduce_sample:
-                others = random.sample(others, int(len(others) * OTHERS_MOD))
-            extras = extras.union(others)
+    by_asc_degree = sorted(list(significant_id_set), key=lambda x: x[1])
+    significant_ids = [i[0] for i in by_asc_degree]
 
-        significant_ids = significant_ids.union(extras)
+    to_subgraph = set()
+    for user_id in significant_ids:
+        try:
+            others = set(graph.neighbors(user_id))
+        except KeyError:
+            continue
+        if reduce_sample and len(others) != 0:
+            others = random.sample(others, int(len(others) * OTHERS_MOD))
 
-    return graph.subgraph(significant_ids)
+        if len(others) == 0:
+            continue
+
+        to_subgraph.add(user_id)
+        for other in others:
+            to_subgraph.add(other)
+
+    pickle_it(rng_state, RNG_FNAME)
+
+    user_graph = graph.subgraph(to_subgraph)
+
+    if pickle:
+        json_it(user_graph, USER_GRAPH_FNAME, nx.node_link_data)
+
+    return user_graph
 
 
 def main():
-    graph = build_graph(pickle=True)
-    small_graph = trim_graph(graph)
-    print(len(graph), len(small_graph))
-    # plot_histo(small_graph)
-
-    # nx.write_gexf(small_graph, "test.gexf")
-    a = to_agraph(small_graph)
-    with open("graph.dot", "w") as dot_file:
-        dot_file.write(str(a))
+    graph = build_graph(pickle=False, from_scratch=True)
+    small_graph = trim_graph(graph, pickle=False, from_scratch=True)
+    small_graph.name = "Twitter User Graph"
+    print(f"full graph: {len(graph)} nodes")
+    print(f"trim graph: {len(small_graph)} nodes")
+    print("Generating JSON")
+    json_it(small_graph, USER_GRAPH_FNAME, nx.node_link_data)
 
 
 if __name__ == "__main__":
