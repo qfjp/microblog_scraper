@@ -174,6 +174,35 @@ def expand_neighbors(api):
             print()
 
 
+def stream_user_tweets():
+
+    users = compile_users_n_others()
+
+    api = authenticate_twitter()
+    stream_listener = StreamListener(num_to_grab=-1, pickle=False)
+    stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
+    for i, representative in enumerate(users):
+        print(f"Streaming from user group {i} (representative user {representative})")
+        user_set = users[representative]
+        user_set.add(representative)
+
+        def get_tweets():
+            stream.filter(follow=user_set, stall_warnings=True)
+
+        p = multiprocessing.Process(target=get_tweets)
+        p.start()
+        p.join(150)
+        p.terminate()
+        p.join()
+        if (i + 1) % 50 == 0:
+            if not json_it(TWEET_DICT, TWEETS_FNAME):
+                sys.stderr.write(f"ERROR: Failed final pickling, abort!\n")
+                sys.exit(FILE_NOT_FOUND_EXIT_CODE)
+            if not json_it(USER_DICT, USER_DICT_FNAME):
+                sys.stderr.write(f"ERROR: Failed final pickling, abort!\n")
+                sys.exit(FILE_NOT_FOUND_EXIT_CODE)
+
+
 def main():
     global GRAB_NEW
     api = authenticate_twitter()
@@ -183,6 +212,7 @@ def main():
         stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
         stream.filter(track=KEYWORDS, stall_warnings=True)
     expand_neighbors(api)
+    stream_user_tweets()
 
 
 if __name__ == "__main__":
