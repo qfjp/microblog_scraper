@@ -1,12 +1,13 @@
 import gzip
 import random
 import sys
-from secrets import TWITTER_APP_KEY, TWITTER_APP_SECRET, TWITTER_KEY, TWITTER_SECRET
+from secrets import (TWITTER_APP_KEY, TWITTER_APP_SECRET, TWITTER_KEY,
+                     TWITTER_SECRET)
 
 import dill
 import tweepy
-
 import ujson
+
 from global_vars import USER_DICT_FNAME, USER_LIST_FNAME
 
 
