@@ -7,6 +7,7 @@ USER_LIST_FNAME = "users"
 USER_GRAPH_FNAME = "user_graph"
 USER_FRAME_FNAME = "user_frame"
 RNG_FNAME = "rng"
+PLOT_FILE_NAME = "plots"
 
 _exit_codes = count(start=1, step=1)
 FILE_NOT_FOUND_EXIT_CODE = next(_exit_codes)
