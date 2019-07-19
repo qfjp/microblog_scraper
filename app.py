@@ -255,7 +255,8 @@ def construct_js_css():
 @app.route("/", methods=["GET", "POST"])
 def plot_page():
     global SCRIPT_DIV
-    construct_js_css()
+    if not SCRIPT_DIV:
+        construct_js_css()
 
     d_source = DataSource.NONE
     if flask.request.method == "POST":
