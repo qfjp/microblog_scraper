@@ -39,7 +39,8 @@ def reload_json(fname_base, default_obj, transform=None):
         with gzip.open(fname, "rt") as json_file:
             result = transform(ujson.load(json_file))
     except FileNotFoundError:
-        sys.stderr(f"Existing object not found at {fname}, reinitializing")
+        sys.stderr.write(f"Existing object not found at {fname}, reinitializing")
+        result = default_obj()
     return result
 
 
