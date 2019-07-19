@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Microblog Scraper</title>
+    {{resources | safe}}
+  </head>
+  <body>
+    <div id="container"></div>
+    <script>
+      fetch("/plot")
+        .then(function(response) {
+          return response.json();
+        })
+        .then(function(item) {
+          Bokeh.embed.embed_item(item);
+        });
+    </script>
+  </body>
+</html>

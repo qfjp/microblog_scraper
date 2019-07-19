@@ -1,22 +1,25 @@
+import json
 import sys
 from enum import Enum, auto, unique
 
 import flask
 import networkx as nx
-from bokeh.embed import components
+from bokeh.embed import components, json_item
 from bokeh.io import output_file, show
-from bokeh.models import (BoxSelectTool, Circle, HoverTool, MultiLine, Plot,
-                          Range1d, TapTool, WheelZoomTool)
+from bokeh.layouts import column
+from bokeh.models import (BoxSelectTool, Circle, CustomJS, HoverTool,
+                          MultiLine, Plot, Range1d, TapTool, WheelZoomTool)
 from bokeh.models.graphs import (EdgesAndLinkedNodes, NodesAndLinkedEdges,
                                  from_networkx)
-from bokeh.palettes import GnBu8, Plasma8, Spectral4, Spectral8
+from bokeh.models.widgets import RadioButtonGroup
+from bokeh.palettes import GnBu8, Spectral4
 from bokeh.plotting import figure
 from bokeh.resources import CDN, INLINE
 from networkx.drawing.nx_agraph import graphviz_layout
 
 from global_vars import (PLOT_FILE_NAME, TWEETS_FNAME, USER_DICT_FNAME,
                          USER_GRAPH_FNAME)
-from utils import json_it, reload_json, reload_object
+from utils import json_it, pickle_it, reload_json, reload_object
 
 app = flask.Flask(__name__)
 app.vars = {}
@@ -24,8 +27,9 @@ app.vars = {}
 USER_DICT = None
 TWEET_DICT = None
 NETWORK = None
-SCRIPT_DIV = None
+GRAPH_DATA = None
 PALETTE = GnBu8
+SOURCE = None
 
 
 @unique
@@ -212,53 +216,37 @@ def make_plottable(colors=None, sizes=None, tweets=None):
     return graph
 
 
-def construct_js_css():
-    global SCRIPT_DIV
-    SCRIPT_DIV = reload_json(PLOT_FILE_NAME, lambda: None)
+def construct_graph_data():
+    global GRAPH_DATA
+    GRAPH_DATA = reload_json("graph_data", lambda: None)
 
-    if SCRIPT_DIV:
+    if GRAPH_DATA:
         return
 
-    SCRIPT_DIV = {}
+    GRAPH_DATA = {}
+    GRAPH_DATA["raw_tweets"] = run_tweets()
     for name, d_source in DataSource.__members__.items():
-        tweets = run_tweets()
         sizes, colors = run_data(d_source)
-        graph = make_plottable(colors=colors, sizes=sizes, tweets=tweets)
+        GRAPH_DATA[str(d_source)] = (sizes, colors)
+    x_range, y_range = get_square_bounds()
+    GRAPH_DATA["range"] = (x_range, y_range)
 
-        tooltips = []
-        if tweets:
-            tooltips.append(("tweets", "@desc"))
-        else:
-            tooltips = None
-        x_range, y_range = get_square_bounds()
-        plot = figure(
-            title="User Graph" + d_source.to_title(),
-            x_range=x_range,
-            y_range=y_range,
-            plot_width=800,
-            plot_height=800,
-        )
-        plot.background_fill_color = "black"
-        plot.background_fill_alpha = 0.9
-        plot.axis.visible = False
-        plot.grid.visible = False
-        plot.add_tools(
-            HoverTool(tooltips=tooltips), TapTool(), BoxSelectTool(), WheelZoomTool()
-        )
-        plot.renderers.append(graph)
-        script, div = components(plot)
-        SCRIPT_DIV[str(d_source)] = (script, div)
-    json_it(SCRIPT_DIV, PLOT_FILE_NAME)
+    json_it(GRAPH_DATA, "graph_data")
 
 
-@app.route("/index", methods=["GET", "POST"])
-@app.route("/", methods=["GET", "POST"])
-def plot_page():
-    global SCRIPT_DIV
-    if not SCRIPT_DIV:
-        construct_js_css()
+@app.route("/")
+def root():
+    return flask.render_template("index.html", resources=CDN.render())
+
+
+@app.route("/plot", methods=["GET"])
+def plot():
+    global GRAPH_DATA
+    if not GRAPH_DATA:
+        construct_graph_data()
 
     d_source = DataSource.NONE
+
     if flask.request.method == "POST":
         data_form = flask.request.form.get("Data")
         if data_form == "none":
@@ -269,23 +257,52 @@ def plot_page():
             d_source = DataSource.FRIENDS
         elif data_form == "tweets":
             d_source = DataSource.TWEETS
-    js_resources = INLINE.render_js()
-    css_resources = INLINE.render_css()
-    script, div = SCRIPT_DIV[str(d_source)]
-    return flask.render_template(
-        "plot.html",
-        plot_script=script,
-        plot_div=div,
-        js_resources=js_resources,
-        css_resources=css_resources,
+
+    tweets = GRAPH_DATA["raw_tweets"]
+    sizes, colors = GRAPH_DATA[str(d_source)]
+    graph = make_plottable(colors=colors, sizes=sizes, tweets=tweets)
+
+    x_range, y_range = GRAPH_DATA["range"]
+
+    tooltips = [("tweets", "@desc")]
+    plot = figure(x_range=x_range, y_range=y_range, plot_width=600, plot_height=600)
+    plot.title.text = "User Graph" + d_source.to_title()
+    plot.background_fill_color = "black"
+    plot.background_fill_alpha = 0.9
+    plot.axis.visible = False
+    plot.grid.visible = False
+    plot.add_tools(
+        HoverTool(tooltips=tooltips), TapTool(), BoxSelectTool(), WheelZoomTool()
     )
+    plot.renderers = [graph]
+
+    source = graph.node_renderer.data_source
+    callback = CustomJS(
+        args=({"source": source, "graph_data": GRAPH_DATA}),
+        code="""
+    var label_arr = cb_obj.attributes.labels
+    var active_ix = cb_obj.attributes.active
+    d_source_str = label_arr[active_ix].toLowerCase()
+    sizes = graph_data[d_source_str][0]
+    colors = graph_data[d_source_str][1]
+    source.data.color = colors
+    source.data.size = sizes
+    source.change.emit();
+    """,
+    )
+    button_group = RadioButtonGroup(
+        labels=["None", "Friends", "Followers", "Tweets"], active=0, callback=callback
+    )
+
+    layout = column(plot, button_group)
+    return json.dumps(json_item(layout, "container"))
 
 
 def main():
     app.run(port=33507, debug=True)
+
+
 if __name__ == "__main__":
     main()
-
-
 # output_file("networkx_graph.html")
 # show(plot)

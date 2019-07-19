@@ -9,3 +9,4 @@ ujson==1.35
 networkx==2.3
 dill==0.3.0
 tweepy==3.7.0
+pscript==0.7.1
